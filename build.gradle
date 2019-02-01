@@ -37,7 +37,6 @@ dependencies {
 
 jar {
     baseName = "tvtropes-scraper"
-    version =  "0.1"
     manifest {
         attributes "Main-Class": "ScraperKt"
     }
