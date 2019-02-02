@@ -14,6 +14,11 @@ data class MainPage(val url: String) {
     private val pageQuoteSource = document.selectFirst(".indent .indent")
     init {
         document.selectFirst("div#main-article").select(".spoiler").tagName("spoiler").removeAttr("title").removeAttr("class")
+        document.setBaseUri("https://tvtropes.org/")
+        for (link in document.select(".twikilink")) {
+            val absoluteUrl = link.attr("abs:href")
+            link.attr("href", absoluteUrl)
+        }
     }
     private val article = document.selectFirst("div#main-article")
     private val examplesHeader = article.select("h2:not(.comment-title)")
@@ -32,13 +37,13 @@ data class MainPage(val url: String) {
             examplesText.add(folderName to folder.text())
         }
     }
-    private var minimalHtml = ""
+    var minimalHtml = ""
     init {
         minimalHtml += title
         minimalHtml += pageQuote
         minimalHtml += pageQuoteSource
         minimalHtml += mainText
-        minimalHtml += examplesHeader
+        if (examples.isNotEmpty()) minimalHtml += examplesHeader
         for (example in examples) {
             minimalHtml += example.first
             minimalHtml += example.second
@@ -95,4 +100,5 @@ fun main(args: Array<String>) {
     File("page.json").writeText(page.pageJson.toString())
     File("pageText.json").writeText(page.pageTextJson.toString())
     File("markdown.json").writeText(page.markdownJson.toString())
+    File("minimal.html").writeText(page.minimalHtml)
 }
