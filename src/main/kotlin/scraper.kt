@@ -22,8 +22,8 @@ data class MainPage(val url: String) {
     }
     private val article = document.selectFirst("div#main-article")
     private val examplesHeader = article.select("h2:not(.comment-title)")
-    private val mainText = article.select("p,ul,h2:not(.comment-title)")
-    private val exampleFolderHeaders = article.select("div.folderlabel").not("[onclick=toggleAllFolders();]")
+    private val mainText = article.select("#main-article > p,#main-article > h2,#main-article > ul")
+    private val exampleFolderHeaders = article.select("div.folderlabel:not([onclick='toggleAllFolders();'])")
     private var exampleFolders = article.select("div.folder")
     private var examples = mutableListOf<Pair<String, String>>()
     private var examplesText = mutableListOf<Pair<String, String>>()
@@ -33,17 +33,17 @@ data class MainPage(val url: String) {
             val folderID = regex.find(label.attr("onclick"))!!.destructured.toList()[0]
             val folderName = label.text()
             val folder = exampleFolders.select("div[id=$folderID]")[0]
-            examples.add(folderName to folder.toString())
+            examples.add(folderName to folder.outerHtml())
             examplesText.add(folderName to folder.text())
         }
     }
     var minimalHtml = ""
     init {
-        minimalHtml += title
-        minimalHtml += pageQuote
-        minimalHtml += pageQuoteSource
-        minimalHtml += mainText
-        if (examples.isNotEmpty()) minimalHtml += examplesHeader
+        minimalHtml += title.outerHtml()
+        minimalHtml += pageQuote.outerHtml()
+        minimalHtml += pageQuoteSource.outerHtml()
+        minimalHtml += mainText.outerHtml()
+        if ( ! minimalHtml.contains(examplesHeader.outerHtml())) minimalHtml += examplesHeader.outerHtml()
         for (example in examples) {
             minimalHtml += example.first
             minimalHtml += example.second
