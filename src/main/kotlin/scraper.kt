@@ -1,10 +1,13 @@
 import com.github.salomonbrys.kotson.jsonArray
 import com.github.salomonbrys.kotson.jsonObject
+import com.github.salomonbrys.kotson.string
 import com.google.gson.JsonObject
 import com.overzealous.remark.IgnoredHtmlElement
 import com.overzealous.remark.Options
 import com.overzealous.remark.Remark
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.io.File
 
 data class MainPage(val url: String) {
@@ -21,40 +24,45 @@ data class MainPage(val url: String) {
         }
     }
     private val article = document.selectFirst("div#main-article")
-    private val imageElement = document.select("div.quoteright")
-    private val image = if (imageElement.isNotEmpty()) imageElement.select("img")[0] else null
-    private val imageCaption = document.select("div.acaptionright")
-    private val examplesHeader = article.select("h2:not(.comment-title)")
+    private val imageElement = document.selectFirst("div.quoteright")
+    private val image = if (imageElement != null) imageElement.selectFirst("img") else null
+    private val imageCaption = document.selectFirst("div.acaptionright")
+    private val examplesHeader = article.selectFirst("h2:not(.comment-title)")
     private val mainText = article.select("#main-article > p,#main-article > h2,#main-article > ul")
     private val exampleFolderHeaders = article.select("div.folderlabel:not([onclick='toggleAllFolders();'])")
     private var exampleFolders = article.select("div.folder")
-    private var examples = mutableListOf<Pair<String, String>>()
+    private var examples = mutableListOf<Pair<Element, Element>>()
     private var examplesText = mutableListOf<Pair<String, String>>()
     init {
         for (label in exampleFolderHeaders) {
             val regex = Regex("togglefolder\\('(.*)'\\)")
             val folderID = regex.find(label.attr("onclick"))!!.destructured.toList()[0]
-            val folderName = label.text()
             val folder = exampleFolders.select("div[id=$folderID]")[0]
-            examples.add(folderName to folder.outerHtml())
-            examplesText.add(folderName to folder.text())
+            examples.add(label to folder)
+            examplesText.add(label.text() to folder.text())
         }
     }
-    var minimalHtml = ""
+    val minimalHtml: String
     init {
-        minimalHtml += title.outerHtml()
-        minimalHtml += imageElement.outerHtml()
-        minimalHtml += imageCaption.outerHtml()
-        minimalHtml += pageQuote.outerHtml()
-        minimalHtml += pageQuoteSource.outerHtml()
-        minimalHtml += mainText.outerHtml()
-        if ( ! minimalHtml.contains(examplesHeader.outerHtml())) minimalHtml += examplesHeader.outerHtml()
+        val minDoc = Document.createShell(url)
+        minDoc.appendChild(title)
+        val table = minDoc.appendElement("table")
+        table.attr("align", "right")
+        var row = table.appendElement("tr")
+        row.appendElement("td").appendChild(imageElement)
+        row = table.appendElement("tr")
+        row.appendElement("td").appendChild(imageCaption)
+        minDoc.appendChild(pageQuote)
+        minDoc.appendChild(pageQuoteSource)
+        mainText.forEach { text -> text.appendTo(minDoc) }
+        if ( ! minDoc.children().contains(examplesHeader)) minDoc.appendChild(examplesHeader)
         for (example in examples) {
-            minimalHtml += example.first
-            minimalHtml += example.second
+            minDoc.appendChild(example.first)
+            minDoc.appendChild(example.second)
         }
+        minimalHtml = minDoc.outerHtml()
     }
-    var pageTextJson = jsonObject(
+    val pageTextJson = jsonObject(
         "title" to title.text(),
         "imageElement" to imageElement.text(),
         "imageCaption" to imageCaption.text(),
@@ -64,9 +72,9 @@ data class MainPage(val url: String) {
         "examplesHeader" to examplesHeader.text(),
         "examples" to jsonObject(examplesText)
     )
-    var markdown: String
-    var minimalMarkdown: String
-    var markdownJson: JsonObject
+    val markdown: String    // Remove for prod
+    val minimalMarkdown: String
+    val markdownJson: JsonObject
     init {
         val opts = Options.markdown()
         opts.ignoredHtmlElements.add(IgnoredHtmlElement.create("spoiler"))
@@ -80,7 +88,7 @@ data class MainPage(val url: String) {
             "pageQuoteSource" to remark.convert(pageQuoteSource.outerHtml()),
             "mainText" to remark.convert(mainText.outerHtml()),
             "examplesHeader" to remark.convert(examplesHeader.outerHtml()),
-            "examples" to jsonObject(examples.map { item -> Pair(item.first, remark.convert(item.second)) })
+            "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) })
         )
     }
     override fun toString(): String {
@@ -89,9 +97,9 @@ data class MainPage(val url: String) {
 }
 
 data class SearchPage(val searchString: String) {
-    private val SEARCH_URL = "https://tvtropes.org/pmwiki/elastic_search_result.php"
+    private val searchUrl = "https://tvtropes.org/pmwiki/elastic_search_result.php"
     private val parameters = hashMapOf<String, String>("q" to searchString, "page_type" to "all")
-    private val document = Jsoup.connect(SEARCH_URL).data(parameters).get()
+    private val document = Jsoup.connect(searchUrl).data(parameters).get()
     private val results = document.select(".search-result")
     val minimalHtml = results.outerHtml()
     val minimalMarkdown: String
@@ -109,12 +117,20 @@ fun main(args: Array<String>) {
         println("[!]: No URL passed.")
         return
     }
-    val page = MainPage(args[0])
-    File("page.md").writeText(page.markdown)
-    File("pageMin.md").writeText(page.minimalMarkdown)
-    File("pageText.json").writeText(page.pageTextJson.toString())
-    File("markdown.json").writeText(page.markdownJson.toString())
-    File("minimal.html").writeText(page.minimalHtml)
-    val searchPage = SearchPage("person of interest")
-    File("searchMarkdown.md").writeText(searchPage.minimalMarkdown)
+    for (arg in args){
+        if (Regex("^https?://.*").matches(arg)) {
+            val page = MainPage(arg)
+            val baseFilename = page.pageTextJson.get("title").string.replace("\\s*".toRegex(), "")
+            File("$baseFilename.md").writeText(page.markdown)
+            File("${baseFilename}_minimal.md").writeText(page.minimalMarkdown)
+            File("${baseFilename}_text.json").writeText(page.pageTextJson.toString())
+            File("${baseFilename}_markdown.json").writeText(page.markdownJson.toString())
+            File("${baseFilename}_minimal.html").writeText(page.minimalHtml)
+        } else {
+            val searchPage = SearchPage(arg)
+            val baseFilename = arg.replace("\\s".toRegex(), "_")
+            File("search_$baseFilename.html").writeText(searchPage.minimalHtml)
+            File("search_$baseFilename.md").writeText(searchPage.minimalMarkdown)
+        }
+    }
 }
