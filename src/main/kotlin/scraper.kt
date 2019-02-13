@@ -1,6 +1,5 @@
 import com.github.salomonbrys.kotson.jsonArray
 import com.github.salomonbrys.kotson.jsonObject
-import com.github.salomonbrys.kotson.string
 import com.google.gson.JsonObject
 import com.overzealous.remark.IgnoredHtmlElement
 import com.overzealous.remark.Options
@@ -12,9 +11,6 @@ import java.io.File
 
 data class MainPage(val url: String) {
     private val document = Jsoup.connect(url).get()
-    private val title = document.selectFirst("h1.entry-title")
-    private val pageQuote = document.selectFirst(".indent em")
-    private val pageQuoteSource = document.selectFirst(".indent .indent")
     init {
         document.selectFirst("div#main-article").select(".spoiler").tagName("spoiler").removeAttr("title").removeAttr("class")
         document.setBaseUri("https://tvtropes.org/")
@@ -23,9 +19,13 @@ data class MainPage(val url: String) {
             link.attr("href", absoluteUrl)
         }
     }
+    private val title = document.selectFirst("h1.entry-title")
     private val article = document.selectFirst("div#main-article")
+    private val pageQuote = document.selectFirst("#main-article > div.indent")
+    private val pageQuoteSource = document.selectFirst("#main-article > div.indent > div")
     private val imageElement = document.selectFirst("div.quoteright")
-    private val image = if (imageElement != null) imageElement.selectFirst("img") else null
+//    private val image = if (imageElement != null) imageElement.selectFirst("img") else null
+    private val image = imageElement?.selectFirst("img")
     private val imageCaption = document.selectFirst("div.acaptionright")
     private val examplesHeader = article.selectFirst("h2:not(.comment-title)")
     private val mainText = article.select("#main-article > p,#main-article > h2,#main-article > ul")
@@ -46,15 +46,17 @@ data class MainPage(val url: String) {
     init {
         val minDoc = Document.createShell(url)
         minDoc.appendChild(title)
-        val table = minDoc.appendElement("table").attr("align", "right")
-        var row = table.appendElement("tr")
-        row.appendElement("td").attr("align", "center").appendChild(image)
-        row = table.appendElement("tr")
-        row.appendElement("td").attr("align", "center").append(imageCaption.html())
-        minDoc.appendChild(pageQuote)
-        minDoc.appendChild(pageQuoteSource)
+        if (image != null) {
+            val table = minDoc.appendElement("table").attr("align", "right")
+            var row = table.appendElement("tr")
+            row.appendElement("td").attr("align", "center").appendChild(image)
+            row = table.appendElement("tr")
+            if (imageCaption != null) row.appendElement("td").attr("align", "center").append(imageCaption.html())
+        }
+        if (pageQuote != null) minDoc.appendChild(pageQuote)
+        if (pageQuoteSource != null) minDoc.appendChild(pageQuoteSource)
         mainText.forEach { text -> text.appendTo(minDoc) }
-        if ( ! minDoc.children().contains(examplesHeader)) minDoc.appendChild(examplesHeader)
+        if ( examplesHeader != null && ! minDoc.children().contains(examplesHeader)) minDoc.appendChild(examplesHeader)
         for (example in examples) {
             minDoc.appendChild(example.first)
             minDoc.appendChild(example.second)
@@ -63,12 +65,12 @@ data class MainPage(val url: String) {
     }
     val pageTextJson = jsonObject(
         "title" to title.text(),
-        "imageElement" to imageElement.text(),
-        "imageCaption" to imageCaption.text(),
-        "pageQuote" to pageQuote.text(),
-        "pageQuoteSource" to pageQuoteSource.text(),
+        "image" to image?.outerHtml(),
+        "imageCaption" to imageCaption?.text(),
+        "pageQuote" to pageQuote?.text(),
+        "pageQuoteSource" to pageQuoteSource?.text(),
         "mainText" to jsonArray(mainText.eachText()),
-        "examplesHeader" to examplesHeader.text(),
+        "examplesHeader" to examplesHeader?.text(),
         "examples" to jsonObject(examplesText)
     )
     val markdown: String    // Remove for prod
@@ -84,10 +86,12 @@ data class MainPage(val url: String) {
         minimalMarkdown = remark.convert(minimalHtml)
         markdownJson = jsonObject(
             "title" to remark.convert(title.outerHtml()),
-            "pageQuote" to remark.convert(pageQuote.outerHtml()),
-            "pageQuoteSource" to remark.convert(pageQuoteSource.outerHtml()),
+            "image" to if (image != null) remark.convert(image.outerHtml()) else null,
+            "imageCaption" to if (imageCaption != null) remark.convert(imageCaption.html()) else null,
+            "pageQuote" to if (pageQuote != null) remark.convert(pageQuote.outerHtml()) else null,
+            "pageQuoteSource" to if (pageQuoteSource != null) remark.convert(pageQuoteSource.outerHtml()) else null,
             "mainText" to remark.convert(mainText.outerHtml()),
-            "examplesHeader" to remark.convert(examplesHeader.outerHtml()),
+            "examplesHeader" to if (examplesHeader != null) remark.convert(examplesHeader.outerHtml()) else null,
             "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) })
         )
     }
@@ -118,19 +122,20 @@ fun main(args: Array<String>) {
         return
     }
     for (arg in args){
+        val baseDir = "out/files"
         if (Regex("^https?://.*").matches(arg)) {
             val page = MainPage(arg)
-            val baseFilename = page.pageTextJson.get("title").string.replace("\\s*".toRegex(), "")
-            File("$baseFilename.md").writeText(page.markdown)
-            File("${baseFilename}_minimal.md").writeText(page.minimalMarkdown)
-            File("${baseFilename}_text.json").writeText(page.pageTextJson.toString())
-            File("${baseFilename}_markdown.json").writeText(page.markdownJson.toString())
-            File("${baseFilename}_minimal.html").writeText(page.minimalHtml)
+            val baseFilename = Regex("^https?://.*/(.*)").find(arg)!!.destructured.toList()[0]
+            File("$baseDir/$baseFilename.md").writeText(page.markdown)
+            File("$baseDir/${baseFilename}_minimal.md").writeText(page.minimalMarkdown)
+            File("$baseDir/${baseFilename}_text.json").writeText(page.pageTextJson.toString())
+            File("$baseDir/${baseFilename}_markdown.json").writeText(page.markdownJson.toString())
+            File("$baseDir/${baseFilename}_minimal.html").writeText(page.minimalHtml)
         } else {
             val searchPage = SearchPage(arg)
             val baseFilename = arg.replace("\\s".toRegex(), "_")
-            File("search_$baseFilename.html").writeText(searchPage.minimalHtml)
-            File("search_$baseFilename.md").writeText(searchPage.minimalMarkdown)
+            File("$baseDir/search_$baseFilename.html").writeText(searchPage.minimalHtml)
+            File("$baseDir/search_$baseFilename.md").writeText(searchPage.minimalMarkdown)
         }
     }
 }
