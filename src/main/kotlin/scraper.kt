@@ -46,12 +46,11 @@ data class MainPage(val url: String) {
     init {
         val minDoc = Document.createShell(url)
         minDoc.appendChild(title)
-        val table = minDoc.appendElement("table")
-        table.attr("align", "right")
+        val table = minDoc.appendElement("table").attr("align", "right")
         var row = table.appendElement("tr")
-        row.appendElement("td").appendChild(imageElement)
+        row.appendElement("td").attr("align", "center").appendChild(image)
         row = table.appendElement("tr")
-        row.appendElement("td").appendChild(imageCaption)
+        row.appendElement("td").attr("align", "center").append(imageCaption.html())
         minDoc.appendChild(pageQuote)
         minDoc.appendChild(pageQuoteSource)
         mainText.forEach { text -> text.appendTo(minDoc) }
@@ -78,6 +77,7 @@ data class MainPage(val url: String) {
     init {
         val opts = Options.markdown()
         opts.ignoredHtmlElements.add(IgnoredHtmlElement.create("spoiler"))
+        opts.ignoredHtmlElements.add(IgnoredHtmlElement.create("table", "align"))
         opts.inlineLinks = true
         val remark = Remark(opts)
         markdown = remark.convert(document.toString())
