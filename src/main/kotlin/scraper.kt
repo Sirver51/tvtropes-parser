@@ -7,6 +7,7 @@ import com.overzealous.remark.Remark
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import org.jsoup.select.Elements
 import java.io.File
 
 data class MainPage(val url: String) {
@@ -24,15 +25,14 @@ data class MainPage(val url: String) {
     private val pageQuote = document.selectFirst("#main-article > div.indent")
     private val pageQuoteSource = document.selectFirst("#main-article > div.indent > div")
     private val imageElement = document.selectFirst("div.quoteright")
-//    private val image = if (imageElement != null) imageElement.selectFirst("img") else null
     private val image = imageElement?.selectFirst("img")
     private val imageCaption = document.selectFirst("div.acaptionright")
     private val examplesHeader = article.selectFirst("h2:not(.comment-title)")
     private val mainText = article.select("#main-article > p,#main-article > h2,#main-article > ul")
     private val exampleFolderHeaders = article.select("div.folderlabel:not([onclick='toggleAllFolders();'])")
-    private var exampleFolders = article.select("div.folder")
-    private var examples = mutableListOf<Pair<Element, Element>>()
-    private var examplesText = mutableListOf<Pair<String, String>>()
+    private val exampleFolders = article.select("div.folder")
+    private val examples = mutableListOf<Pair<Element, Element>>()
+    private val examplesText = mutableListOf<Pair<String, String>>()
     init {
         for (label in exampleFolderHeaders) {
             val regex = Regex("togglefolder\\('(.*)'\\)")
@@ -40,6 +40,19 @@ data class MainPage(val url: String) {
             val folder = exampleFolders.select("div[id=$folderID]")[0]
             examples.add(label to folder)
             examplesText.add(label.text() to folder.text())
+        }
+    }
+    private val stinger = Elements()
+    init {
+        var reachedEndOfMainText = false
+        for (child in article.children()) {
+            if (child === mainText.last()) {
+                reachedEndOfMainText = true
+                continue
+            }
+            if (reachedEndOfMainText) {
+                stinger.add(child)
+            }
         }
     }
     val minimalHtml: String
@@ -61,6 +74,9 @@ data class MainPage(val url: String) {
             minDoc.appendChild(example.first)
             minDoc.appendChild(example.second)
         }
+        for (child in stinger) {
+            minDoc.appendChild(child)
+        }
         minimalHtml = minDoc.outerHtml()
     }
     val pageTextJson = jsonObject(
@@ -71,7 +87,8 @@ data class MainPage(val url: String) {
         "pageQuoteSource" to pageQuoteSource?.text(),
         "mainText" to jsonArray(mainText.eachText()),
         "examplesHeader" to examplesHeader?.text(),
-        "examples" to jsonObject(examplesText)
+        "examples" to jsonObject(examplesText),
+        "stinger" to stinger.text()
     )
     val markdown: String    // Remove for prod
     val minimalMarkdown: String
@@ -92,7 +109,8 @@ data class MainPage(val url: String) {
             "pageQuoteSource" to if (pageQuoteSource != null) remark.convert(pageQuoteSource.outerHtml()) else null,
             "mainText" to remark.convert(mainText.outerHtml()),
             "examplesHeader" to if (examplesHeader != null) remark.convert(examplesHeader.outerHtml()) else null,
-            "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) })
+            "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) }),
+            "stinger" to remark.convert(stinger.outerHtml())
         )
     }
     override fun toString(): String {
@@ -102,7 +120,7 @@ data class MainPage(val url: String) {
 
 data class SearchPage(val searchString: String) {
     private val searchUrl = "https://tvtropes.org/pmwiki/elastic_search_result.php"
-    private val parameters = hashMapOf<String, String>("q" to searchString, "page_type" to "all")
+    private val parameters = hashMapOf("q" to searchString, "page_type" to "all")
     private val document = Jsoup.connect(searchUrl).data(parameters).get()
     private val results = document.select(".search-result")
     val minimalHtml = results.outerHtml()
