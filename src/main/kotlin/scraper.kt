@@ -55,6 +55,8 @@ data class MainPage(val url: String) {
             }
         }
     }
+    private val alternativeTitles = document.selectFirst(".alt-titles")
+    private val sectionLinks = document.selectFirst(".section-links")
     val minimalHtml: String
     init {
         val minDoc = Document.createShell(url)
@@ -77,6 +79,19 @@ data class MainPage(val url: String) {
         for (child in stinger) {
             minDoc.appendChild(child)
         }
+        minDoc.appendChild(alternativeTitles)
+        val sectionLinksTable = minDoc.appendElement("table")
+        val sectionLinksTableHeader = sectionLinksTable.appendElement("tr")
+        for (title in sectionLinks.select(".titles div")) {
+            sectionLinksTableHeader.appendElement("th").appendChild(title.selectFirst("h3"))
+        }
+        for (row in sectionLinks.select(".links ul")) {
+            val tableRow = sectionLinksTable.appendElement("tr")
+            for (cell in row.select("li")) {
+                if (cell.children().isNotEmpty()) tableRow.appendElement("td").appendChild(cell.selectFirst("a"))
+                else tableRow.appendElement("td").append("")
+            }
+        }
         minimalHtml = minDoc.outerHtml()
     }
     val pageTextJson = jsonObject(
@@ -88,7 +103,8 @@ data class MainPage(val url: String) {
         "mainText" to jsonArray(mainText.eachText()),
         "examplesHeader" to examplesHeader?.text(),
         "examples" to jsonObject(examplesText),
-        "stinger" to stinger.text()
+        "stinger" to stinger.text(),
+        "alternativeTitles" to alternativeTitles.text()
     )
     val markdown: String    // Remove for prod
     val minimalMarkdown: String
@@ -110,7 +126,8 @@ data class MainPage(val url: String) {
             "mainText" to remark.convert(mainText.outerHtml()),
             "examplesHeader" to if (examplesHeader != null) remark.convert(examplesHeader.outerHtml()) else null,
             "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) }),
-            "stinger" to remark.convert(stinger.outerHtml())
+            "stinger" to remark.convert(stinger.outerHtml()),
+            "alternativeTitles" to alternativeTitles.outerHtml()
         )
     }
     override fun toString(): String {
