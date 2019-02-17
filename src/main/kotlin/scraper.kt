@@ -13,6 +13,10 @@ import java.io.File
 data class MainPage(val url: String) {
     private val document = Jsoup.connect(url).get()
     init {
+        /*
+        * Surrounds all spoilers with the <spoiler> tag to be handled separately (since Markdown doesn't support them).
+        * Also onverts all TV tropes links to absolute references.
+        */
         document.selectFirst("div#main-article").select(".spoiler").tagName("spoiler").removeAttr("title").removeAttr("class")
         document.setBaseUri("https://tvtropes.org/")
         for (link in document.select(".twikilink, .subpage-link, .section-links a")) {
@@ -38,6 +42,9 @@ data class MainPage(val url: String) {
     private val examples = mutableListOf<Pair<Element, Element>>()
     private val examplesText = mutableListOf<Pair<String, String>>()
     init {
+        /*
+        * Creates a list of pairs of folder labels and folder contents
+        */
         for (label in exampleFolderHeaders) {
             val regex = Regex("togglefolder\\('(.*)'\\)")
             val folderID = regex.find(label.attr("onclick"))!!.destructured.toList()[0]
@@ -48,6 +55,11 @@ data class MainPage(val url: String) {
     }
     private val stinger = Elements()
     init {
+        /*
+        * Gets the stinger text by grabbing everything in the article that comes after everything in mainText
+        * Hacky solution, but given the lack of uniform classes, ids, or even layout, the only reliable one I could
+        * come up with.
+        */
         var reachedEndOfMainText = false
         for (child in article.children()) {
             if (child === mainText.last()) {
@@ -65,6 +77,10 @@ data class MainPage(val url: String) {
     private val subpageLinks: Elements
     private val subpageLinksTable: Element
     init {
+        /*
+        * Grabs the subpage links, including the ones in the "More" dropdown.
+        * Checks if value contains pmwiki to ensure that empty or invalid items are not included.
+        */
         subpageLinks = document.select("ul.subpage-links li:not(.more-subpages, .create-subpage) a")
         for (item in document.select("ul.subpage-links li.more-subpages option[value*=pmwiki]")) {
             item.tagName("a").attr("href", item.attr("value"))
@@ -73,15 +89,20 @@ data class MainPage(val url: String) {
     }
     val minimalHtml: String
     init {
+        /*
+        * Uses Jsoup to construct an HTML doc that contains only the actual meat of the page.
+        */
         val minDoc = Document.createShell(url)
         minDoc.appendChild(title)
-//        minDoc.append(subpageLinks.outerHtml())
+        // Puts the subpage links in a table for cleaner formatting.
         subpageLinksTable = minDoc.appendElement("table")
         var subpageLinksTableRow = subpageLinksTable.appendElement("tr")
         for (link in subpageLinks) {
             subpageLinksTableRow.appendElement("td").appendChild(link)
+            // Each row is limited to 4 cells. This should probably be made configurable somehow.
             if (subpageLinksTableRow.children().size % 4 == 0) subpageLinksTableRow = subpageLinksTable.appendElement("tr")
         }
+        // Puts the image and imagecaption (if they exist) into a right-aligned table to mimic the look and feel of the actual page.
         if (image != null) {
             val table = minDoc.appendElement("table").attr("align", "right")
             var row = table.appendElement("tr")
@@ -92,6 +113,8 @@ data class MainPage(val url: String) {
         if (pageQuote != null) minDoc.appendChild(pageQuote)
         if (pageQuoteSource != null) minDoc.appendChild(pageQuoteSource)
         mainText.forEach { text -> text.appendTo(minDoc) }
+        // The examples header will sometimes show up twice, particularly when a page has both links and example folders.
+        // This fixes that.
         if ( examplesHeader != null && ! minDoc.children().contains(examplesHeader)) minDoc.appendChild(examplesHeader)
         for (example in examples) {
             minDoc.appendChild(example.first)
@@ -115,6 +138,7 @@ data class MainPage(val url: String) {
         }
         minimalHtml = minDoc.outerHtml()
     }
+    // Outputs page text to JSON. Mainly for dev purposes. Will probably remove at some point.
     val pageTextJson = jsonObject(
         "title" to title.text(),
         "image" to image?.outerHtml(),
@@ -127,16 +151,15 @@ data class MainPage(val url: String) {
         "stinger" to stinger.text(),
         "alternativeTitles" to alternativeTitles?.text()
     )
-    val markdown: String    // Remove for prod
     val minimalMarkdown: String
     val markdownJson: JsonObject
+    // Converts the minimal HTML to Markdown. Also puts the MD version of the various sections into a JSON.
     init {
         val opts = Options.markdown()
         opts.ignoredHtmlElements.add(IgnoredHtmlElement.create("spoiler"))
         opts.ignoredHtmlElements.add(IgnoredHtmlElement.create("table", "align"))
         opts.inlineLinks = true
         val remark = Remark(opts)
-        markdown = remark.convert(document.toString())
         minimalMarkdown = remark.convert(minimalHtml)
         markdownJson = jsonObject(
             "title" to remark.convert(title.outerHtml()),
@@ -175,17 +198,44 @@ data class SearchPage(val searchString: String) {
 }
 
 fun main(args: Array<String>) {
+    /*
+    * Commandline arguments can be URLs or search strings. Anything that doesn't start with http:// or https:// is taken
+    * as a search string.
+    * Can also specify an output directory using the -o/--output-dir flag. The implementation for this is terrible, but
+    * it would have been overkill to include a full commandline parser library for such a tiny use case. In any case,
+    * commandline usage is not the intended final use case - ideally, the class would be used directly.
+    */
     if (args.isEmpty()) {
-        println("[!]: No URL passed.")
+        println("[!]: No URL(s) passed.")
         return
     }
+    var baseDir = ""
+    var isOutputDir = false
+    for (arg in args) {
+        if (arg == "-o" || arg == "--output-dir") {
+            isOutputDir = true
+            continue
+        }
+        if (isOutputDir) {
+            baseDir = arg
+            File(baseDir).mkdirs()
+            break
+        }
+    }
+    isOutputDir = false
     for (arg in args){
-        val baseDir = "out/files"
+        if (arg == "-o" || arg == "--output-dir") {
+            isOutputDir = true
+            continue
+        }
+        if (isOutputDir) {
+            isOutputDir = false
+            continue
+        }
         if (Regex("^https?://.*").matches(arg)) {
             val page = MainPage(arg)
             val baseFilename = Regex("^https?://.*/(.*)").find(arg)!!.destructured.toList()[0]
             val category = Regex("^https?://.*/(.*)/.*").find(arg)!!.destructured.toList()[0]
-            File("$baseDir/$baseFilename$category.md").writeText(page.markdown)
             File("$baseDir/${baseFilename}${category}_minimal.md").writeText(page.minimalMarkdown)
             File("$baseDir/${baseFilename}${category}_text.json").writeText(page.pageTextJson.toString())
             File("$baseDir/${baseFilename}${category}_markdown.json").writeText(page.markdownJson.toString())
