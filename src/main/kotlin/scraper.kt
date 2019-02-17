@@ -15,9 +15,13 @@ data class MainPage(val url: String) {
     init {
         document.selectFirst("div#main-article").select(".spoiler").tagName("spoiler").removeAttr("title").removeAttr("class")
         document.setBaseUri("https://tvtropes.org/")
-        for (link in document.select(".twikilink")) {
+        for (link in document.select(".twikilink, .subpage-link, .section-links a")) {
             val absoluteUrl = link.attr("abs:href")
             link.attr("href", absoluteUrl)
+        }
+        for (link in document.select(".more-subpages option[value*=pmwiki]")) {
+            val absoluteUrl = link.attr("abs:value")
+            link.attr("value", absoluteUrl)
         }
     }
     private val title = document.selectFirst("h1.entry-title")
@@ -57,16 +61,27 @@ data class MainPage(val url: String) {
     }
     private val alternativeTitles = document.selectFirst(".alt-titles")
     private val sectionLinks = document.selectFirst(".section-links")
+    private val sectionLinksTable: Element
+    private val subpageLinks: Elements
+    private val subpageLinksTable: Element
     init {
-        for (link in sectionLinks.select("a")) {
-            val absoluteUrl = link.attr("abs:href")
-            link.attr("href", absoluteUrl)
+        subpageLinks = document.select("ul.subpage-links li:not(.more-subpages, .create-subpage) a")
+        for (item in document.select("ul.subpage-links li.more-subpages option[value*=pmwiki]")) {
+            item.tagName("a").attr("href", item.attr("value"))
+            subpageLinks.add(item)
         }
     }
     val minimalHtml: String
     init {
         val minDoc = Document.createShell(url)
         minDoc.appendChild(title)
+//        minDoc.append(subpageLinks.outerHtml())
+        subpageLinksTable = minDoc.appendElement("table")
+        var subpageLinksTableRow = subpageLinksTable.appendElement("tr")
+        for (link in subpageLinks) {
+            subpageLinksTableRow.appendElement("td").appendChild(link)
+            if (subpageLinksTableRow.children().size % 4 == 0) subpageLinksTableRow = subpageLinksTable.appendElement("tr")
+        }
         if (image != null) {
             val table = minDoc.appendElement("table").attr("align", "right")
             var row = table.appendElement("tr")
@@ -86,7 +101,7 @@ data class MainPage(val url: String) {
             minDoc.appendChild(child)
         }
         minDoc.appendChild(alternativeTitles)
-        val sectionLinksTable = minDoc.appendElement("table")
+        sectionLinksTable = minDoc.appendElement("table")
         val sectionLinksTableHeader = sectionLinksTable.appendElement("tr")
         for (title in sectionLinks.select(".titles div")) {
             sectionLinksTableHeader.appendElement("th").appendChild(title.selectFirst("h3"))
@@ -133,7 +148,9 @@ data class MainPage(val url: String) {
             "examplesHeader" to if (examplesHeader != null) remark.convert(examplesHeader.outerHtml()) else null,
             "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) }),
             "stinger" to remark.convert(stinger.outerHtml()),
-            "alternativeTitles" to remark.convert(alternativeTitles.outerHtml())
+            "alternativeTitles" to remark.convert(alternativeTitles.outerHtml()),
+            "sectionLinks" to remark.convert(sectionLinksTable.outerHtml()),
+            "subpageLinks" to remark.convert(subpageLinksTable.outerHtml())
         )
     }
     override fun toString(): String {
