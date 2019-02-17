@@ -57,6 +57,12 @@ data class MainPage(val url: String) {
     }
     private val alternativeTitles = document.selectFirst(".alt-titles")
     private val sectionLinks = document.selectFirst(".section-links")
+    init {
+        for (link in sectionLinks.select("a")) {
+            val absoluteUrl = link.attr("abs:href")
+            link.attr("href", absoluteUrl)
+        }
+    }
     val minimalHtml: String
     init {
         val minDoc = Document.createShell(url)
@@ -127,7 +133,7 @@ data class MainPage(val url: String) {
             "examplesHeader" to if (examplesHeader != null) remark.convert(examplesHeader.outerHtml()) else null,
             "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) }),
             "stinger" to remark.convert(stinger.outerHtml()),
-            "alternativeTitles" to alternativeTitles.outerHtml()
+            "alternativeTitles" to remark.convert(alternativeTitles.outerHtml())
         )
     }
     override fun toString(): String {
