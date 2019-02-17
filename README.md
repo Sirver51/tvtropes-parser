@@ -1,4 +1,4 @@
-# tvtropes-scraper
+# tvtropes-parser
 Parses a TV Tropes page into sections (i.e. page title, article text, categories, etc.), and convert them into plaintext and Markdown. *Not* intended for mass scraping. Written in Kotlin.
 
 I needed a page parser for TV Tropes that would work with all the various types of pages on the site, but couldn't find any that were general enough. This is my attempt at fixing that.  
