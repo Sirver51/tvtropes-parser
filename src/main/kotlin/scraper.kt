@@ -100,7 +100,7 @@ data class MainPage(val url: String) {
         for (child in stinger) {
             minDoc.appendChild(child)
         }
-        minDoc.appendChild(alternativeTitles)
+        if (alternativeTitles != null) minDoc.appendChild(alternativeTitles)
         sectionLinksTable = minDoc.appendElement("table")
         val sectionLinksTableHeader = sectionLinksTable.appendElement("tr")
         for (title in sectionLinks.select(".titles div")) {
@@ -125,7 +125,7 @@ data class MainPage(val url: String) {
         "examplesHeader" to examplesHeader?.text(),
         "examples" to jsonObject(examplesText),
         "stinger" to stinger.text(),
-        "alternativeTitles" to alternativeTitles.text()
+        "alternativeTitles" to alternativeTitles?.text()
     )
     val markdown: String    // Remove for prod
     val minimalMarkdown: String
@@ -148,7 +148,7 @@ data class MainPage(val url: String) {
             "examplesHeader" to if (examplesHeader != null) remark.convert(examplesHeader.outerHtml()) else null,
             "examples" to jsonObject(examples.map { item -> Pair(item.first.text(), remark.convert(item.second.outerHtml())) }),
             "stinger" to remark.convert(stinger.outerHtml()),
-            "alternativeTitles" to remark.convert(alternativeTitles.outerHtml()),
+            "alternativeTitles" to if (alternativeTitles != null) remark.convert(alternativeTitles.outerHtml()) else null,
             "sectionLinks" to remark.convert(sectionLinksTable.outerHtml()),
             "subpageLinks" to remark.convert(subpageLinksTable.outerHtml())
         )
@@ -184,11 +184,12 @@ fun main(args: Array<String>) {
         if (Regex("^https?://.*").matches(arg)) {
             val page = MainPage(arg)
             val baseFilename = Regex("^https?://.*/(.*)").find(arg)!!.destructured.toList()[0]
-            File("$baseDir/$baseFilename.md").writeText(page.markdown)
-            File("$baseDir/${baseFilename}_minimal.md").writeText(page.minimalMarkdown)
-            File("$baseDir/${baseFilename}_text.json").writeText(page.pageTextJson.toString())
-            File("$baseDir/${baseFilename}_markdown.json").writeText(page.markdownJson.toString())
-            File("$baseDir/${baseFilename}_minimal.html").writeText(page.minimalHtml)
+            val category = Regex("^https?://.*/(.*)/.*").find(arg)!!.destructured.toList()[0]
+            File("$baseDir/$baseFilename$category.md").writeText(page.markdown)
+            File("$baseDir/${baseFilename}${category}_minimal.md").writeText(page.minimalMarkdown)
+            File("$baseDir/${baseFilename}${category}_text.json").writeText(page.pageTextJson.toString())
+            File("$baseDir/${baseFilename}${category}_markdown.json").writeText(page.markdownJson.toString())
+            File("$baseDir/${baseFilename}${category}_minimal.html").writeText(page.minimalHtml)
         } else {
             val searchPage = SearchPage(arg)
             val baseFilename = arg.replace("\\s".toRegex(), "_")
